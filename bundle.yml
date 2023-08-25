@@ -3,7 +3,7 @@ bundle:
   name: techsummit-cvops
 
 workspace:
-  host: https://e2-dogfood.staging.cloud.databricks.com/
+  host: https://adb-984752964297111.11.azuredatabricks.net/
 
 resources:
 
