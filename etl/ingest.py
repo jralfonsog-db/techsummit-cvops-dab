@@ -8,13 +8,13 @@ from pyspark.sql.functions import regexp_replace
 @dlt.table
 @dlt.expect("No null links", "link is not null")
 def pcb_images():
-    csv_path = "dbfs:/data-asset-bundles-dais2023/fe_medium_posts_raw.csv"
+    csv_path = ""
     return spark.read.csv(csv_path, header=True)
   
 @dlt.table
 @dlt.expect("No null links", "link is not null")
 def pcb_labels():
-    csv_path = "dbfs:/data-asset-bundles-dais2023/fe_medium_posts_raw.csv"
+    csv_path = ""
     return spark.read.csv(csv_path, header=True)
   
 @dlt.table

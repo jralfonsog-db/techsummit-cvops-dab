@@ -14,9 +14,9 @@ resources:
       target: "medium_post_report_${bundle.environment}"
       libraries:
         - file:
-            path: ./train/ingest.py
+            path: ./etl/ingest.py
         - file:
-            path: ./train/preprocess.py
+            path: ./etl/preprocess.py
       channel: preview
       configuration:
         "bundle.file_path": "/Workspace/${workspace.file_path}"
