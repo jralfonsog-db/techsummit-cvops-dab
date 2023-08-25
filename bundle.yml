@@ -14,9 +14,9 @@ resources:
       target: "medium_post_report_${bundle.environment}"
       libraries:
         - file:
-            path: ./ingest.py
+            path: ./train/ingest.py
         - file:
-            path: ./get_metrics.py
+            path: ./train/preprocess.py
       channel: preview
       configuration:
         "bundle.file_path": "/Workspace/${workspace.file_path}"
@@ -35,7 +35,7 @@ resources:
           notebook_task:
             base_parameters:
               dbname: "medium_post_report_${bundle.environment}"
-            notebook_path: ./fe_medium_report.py
+            notebook_path: ./train/train_model.py
           new_cluster:
             spark_version: 13.1.x-scala2.12
             num_workers: 1
