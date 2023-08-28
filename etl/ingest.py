@@ -8,8 +8,11 @@ import pyspark.sql.functions as F
 # catalog = spark.sql("SELECT current_catalog()").collect()[0][0]
 # schema = spark.sql("SELECT current_schema()").collect()[0][0]
 
-catalog = "cvops-test"
-schema = "pcb"
+# catalog = "cvops-test"
+# schema = "pcb"
+
+catalog = spark.conf.get("pipelines.catalog")
+schema = spark.conf.get("pipelines.schema")
 
 @dlt.table
 @dlt.expect("No null images", "content is not null")
