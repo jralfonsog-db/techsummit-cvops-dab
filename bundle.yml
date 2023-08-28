@@ -11,7 +11,7 @@ resources:
     # Our DLT pipeline
     cvops_dlt_pipeline:
       name: "[${bundle.environment}] Tech Summit CVOps Pipeline"
-      catalog: "cvops_${bundle.environment}"
+      catalog: "techsummit_cvops_${bundle.environment}"
       target: pcb
       libraries:
         - file:
@@ -21,7 +21,8 @@ resources:
       channel: preview
       configuration:
         "bundle.file_path": "/Workspace/${workspace.file_path}"
-        "pipelines.catalog": "cvops_${bundle.environment}"
+        "pipelines.catalog": "techsummit_cvops_${bundle.environment}"
+        "pipelines.schema": "pcb"
       serverless: true
 
   jobs:
