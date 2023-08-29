@@ -79,8 +79,8 @@ environments:
           - level: CAN_VIEW
             group_name: users
           development: false
-          photon: true
-          clusters:
-            - autoscale:
-                min_workers: 2
-                max_workers: 8
+          # photon: true
+          # clusters:
+          #   - autoscale:
+          #       min_workers: 2
+          #       max_workers: 8
