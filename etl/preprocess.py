@@ -1,35 +1,71 @@
-# from os import path
-# import dlt
-# from pyspark.sql import DataFrame
-# from pyspark.sql.functions import desc, pandas_udf
-# import pandas as pd
-# import requests
-#
-# @dlt.table
-# def medium_metrics():
-#     df: DataFrame = dlt.read("medium_clean")
-#
-#     metricsDF = df.groupby("link").applyInPandas(get_metrics, schema="link string, claps double, readingTime double")
-#
-#     # Join on original data, sort by number of claps descending
-#     finalDF = metricsDF.join(df, on = "link", how = "right_outer").sort(desc("claps"))
-#     return finalDF
-#
-# # Get Medium page HTML and parse clap count and reading time
-# def get_metrics(input_df: pd.DataFrame) -> pd.DataFrame:
-#     story_url = input_df['link'][0]
-#     response = story = requests.get(story_url)
-#     story = response.content.decode("utf-8")
-#     try:
-#         c = story.split('clapCount":')[1]
-#         r = story.split('readingTime":')[1]
-#         clapEndIndex = c.index(",")
-#         rEndIndex = r.index(",")
-#         claps = int(c[0:clapEndIndex])
-#         readingTime = float(r[0:rEndIndex])
-#         result = pd.DataFrame(data={'link': [story_url], 'claps': [claps], 'readingTime': [readingTime]})
-#     except Exception:
-#         print("Couldnt access URL, returning 0")
-#         result = pd.DataFrame(data={'link': [story_url], 'claps': [0], 'readingTime': [0]})
-#     return result
-#
+# Databricks notebook source
+# MAGIC %md ## Top Medium Posts by Databricks Field Engineering
+
+# COMMAND ----------
+
+# MAGIC %md ### Read Data
+
+# COMMAND ----------
+
+from pyspark.sql.functions import pandas_udf
+from PIL import Image
+import io
+
+IMAGE_RESIZE = 256
+
+
+@pandas_udf("binary")
+def resize_image_udf(content_series):
+    def resize_image(content):
+        """resize image and serialize back as jpeg"""
+        # Load the PIL image
+        image = Image.open(io.BytesIO(content))
+        width, height = image.size  # Get dimensions
+        new_size = min(width, height)
+        # Crop the center of the image
+        image = image.crop(
+            ((width - new_size) / 2, (height - new_size) / 2, (width + new_size) / 2, (height + new_size) / 2))
+        # Resize to the new resolution
+        image = image.resize((IMAGE_RESIZE, IMAGE_RESIZE), Image.NEAREST)
+        # Save back as jpeg
+        output = io.BytesIO()
+        image.save(output, format='JPEG')
+        return output.getvalue()
+
+    return content_series.apply(resize_image)
+
+
+@pandas_udf("binary")
+def flip_image_horizontal_udf(content_series):
+    def flip_image(content):
+        """resize image and serialize back as jpeg"""
+        # Load the PIL image
+        image = Image.open(io.BytesIO(content))
+        # Flip
+        image = image.transpose(PIL.Image.FLIP_TOP_BOTTOM)
+        # Save back as jpeg
+        output = io.BytesIO()
+        image.save(output, format='JPEG')
+        return output.getvalue()
+
+    return content_series.apply(flip_image)
+
+
+def training_dataset_augmented():
+    # add the metadata to enable the image preview
+    image_meta = {"spark.contentAnnotation": '{"mimeType": "image/jpeg"}'}
+
+    crop_resize_dataset = (
+        dlt.read("training_dataset")
+        .withColumn("sort", f.rand()).orderBy("sort").drop('sort')  # shuffle the DF
+        .withColumn("content", resize_image_udf(f.col("content")).alias("content", metadata=image_meta))
+    )
+
+    flip_damaged = (
+        crop_resize_dataset
+        .filter("label == 'damaged'")
+        .withColumn("content",
+                    flip_image_horizontal_udf(f.col("content")).alias("content", metadata=image_meta))
+    )
+
+    return crop_resize_dataset.union(flip_damaged)

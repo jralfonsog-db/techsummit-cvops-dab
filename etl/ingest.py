@@ -1,20 +1,14 @@
-from os import path
-
 import dlt
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import regexp_replace, col
-import pyspark.sql.functions as F
+import pyspark.sql.functions as f
 
-# catalog = spark.sql("SELECT current_catalog()").collect()[0][0]
-# schema = spark.sql("SELECT current_schema()").collect()[0][0]
-
-# catalog = "cvops-test"
-# schema = "pcb"
 
 catalog = spark.conf.get("pipelines.catalog")
 schema = spark.conf.get("pipelines.schema")
 
-@dlt.table
+@dlt.table(
+    comment=f"Raw images from the PCB dataset, ingested from /Volumes/{catalog}/{schema}/landing/Images/"
+)
 @dlt.expect("No null images", "content is not null")
 def pcb_images():
     pcb_images_path = f"/Volumes/{catalog}/{schema}/landing/Images/"
@@ -24,19 +18,33 @@ def pcb_images():
         .option("pathGlobFilter", "*.JPG")
         .option("recursiveFileLookup", "true")
         .load(pcb_images_path)
-        .withColumn("filename", F.substring_index(col("path"), "/", -1))
+        .withColumn("filename", f.substring_index(f.col("path"), "/", -1))
     )
 
-@dlt.table
+@dlt.table(
+    comment=f"Labels from the PCB dataset, ingested from /Volumes/{catalog}/{schema}/landing/labels/"
+)
 @dlt.expect("No null labels", "labelDetail is not null")
 def pcb_labels():
-    csv_path = f"/Volumes/{catalog}/{schema}/landing/labels/"
+    pcb_labels_path = f"/Volumes/{catalog}/{schema}/landing/labels/"
     return (
         spark.readStream.format("cloudFiles")
         .option("cloudFiles.format", "csv")
         .option("header", True)
-        .load(f"/Volumes/cvops/pcb/landing/labels/")
-        .withColumn("filename", F.substring_index(col("image"), "/", -1))
+        .load(pcb_labels_path)
+        .withColumn("filename", f.substring_index(f.col("image"), "/", -1))
         .select("filename", "label")
         .withColumnRenamed("label", "labelDetail")
     )
+
+@dlt.table(
+    comment=f"Training dataset without augmentation"
+)
+def training_dataset():
+    pcb_images: DataFrame = dlt.read("pcb_images")
+    pcb_labels: DataFrame = dlt.read("pcb_labels")
+
+    return pcb_labels.withColumn(
+        "label",
+        f.when(pcb_labels["labelDetail"] == "normal", "normal").otherwise("damaged"),
+    ).join(pcb_images, how="inner", on="filename")

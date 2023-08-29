@@ -16,14 +16,19 @@ resources:
       libraries:
         - file:
             path: ./etl/ingest.py
-        - file:
-            path: ./etl/preprocess.py
       channel: preview
       configuration:
         "bundle.file_path": "/Workspace/${workspace.file_path}"
         "pipelines.catalog": "techsummit_cvops_${bundle.environment}"
         "pipelines.schema": "pcb"
-      serverless: true
+      serverless: false
+      edition: "ADVANCED"
+      clusters:
+        - label: "default"
+          autoscale:
+            min_workers: 1
+            max_workers: 5
+            mode: ENHANCED
 
   jobs:
     # A two-task Databricks Workflow - dlt + notebook report
