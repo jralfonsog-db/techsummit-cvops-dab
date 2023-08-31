@@ -1,10 +1,9 @@
 import dlt
-from pyspark.sql import DataFrame
 import pyspark.sql.functions as f
-
 
 catalog = spark.conf.get("pipelines.catalog")
 schema = spark.conf.get("pipelines.schema")
+
 
 @dlt.table(
     comment=f"Raw images from the PCB dataset, ingested from /Volumes/{catalog}/{schema}/landing/Images/"
@@ -21,6 +20,7 @@ def pcb_images():
         .withColumn("filename", f.substring_index(f.col("path"), "/", -1))
     )
 
+
 @dlt.table(
     comment=f"Labels from the PCB dataset, ingested from /Volumes/{catalog}/{schema}/landing/labels/"
 )
@@ -36,15 +36,3 @@ def pcb_labels():
         .select("filename", "label")
         .withColumnRenamed("label", "labelDetail")
     )
-
-@dlt.table(
-    comment=f"Training dataset without augmentation"
-)
-def training_dataset():
-    pcb_images: DataFrame = dlt.read("pcb_images")
-    pcb_labels: DataFrame = dlt.read("pcb_labels")
-
-    return pcb_labels.withColumn(
-        "label",
-        f.when(pcb_labels["labelDetail"] == "normal", "normal").otherwise("damaged"),
-    ).join(pcb_images, how="inner", on="filename")

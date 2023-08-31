@@ -16,6 +16,8 @@ resources:
       libraries:
         - file:
             path: ./etl/ingest.py
+        - file:
+            path: ./etl/preprocess.py
       channel: preview
       configuration:
         "bundle.file_path": "/Workspace/${workspace.file_path}"
