@@ -6,59 +6,56 @@ workspace:
   host: https://adb-984752964297111.11.azuredatabricks.net/
 
 resources:
-
-  pipelines:
-    # Our DLT pipeline
-    cvops_dlt_pipeline:
-      name: "[${bundle.environment}] Tech Summit CVOps Pipeline"
-      catalog: "techsummit_cvops_${bundle.environment}"
-      target: pcb
-      libraries:
-        - file:
-            path: ./etl/ingest.py
-        - file:
-            path: ./etl/preprocess.py
-      channel: preview
-      configuration:
-        "bundle.file_path": "/Workspace/${workspace.file_path}"
-        "pipelines.catalog": "techsummit_cvops_${bundle.environment}"
-        "pipelines.schema": "pcb"
-      serverless: false
-      edition: "ADVANCED"
-      clusters:
-        - label: "default"
-          autoscale:
-            min_workers: 1
-            max_workers: 5
-            mode: ENHANCED
-
   jobs:
-    # A two-task Databricks Workflow - dlt + notebook report
+    # A three-task Databricks Workflow (all notebooks) - ingestion + preprocessing + training
     techsummit_cvops_training:
       name: "[${bundle.environment}] Tech Summit CVOps - Training pipeline"
+      job_clusters:
+        - job_cluster_key: light-cpu-cluster
+          new_cluster:
+            spark_version: 13.3.x-cpu-scala2.12
+            node_type_id: Standard_DS3_v2
+            num_workers: 2
+        - job_cluster_key: light-gpu-cluster
+          new_cluster:
+            spark_version: 13.3.x-gpu-ml-scala2.12
+            node_type_id: Standard_NC6s_v3
+            spark_conf:
+              spark.master: local[*, 4]
+              spark.databricks.cluster.profile: singleNode
+              spark.databricks.dataLineage.enabled: 'true'
+              spark.databricks.delta.preview.enabled: 'true'
       tasks:
-        - task_key: cvops_dlt_pipeline
-          pipeline_task:
-            pipeline_id: ${resources.pipelines.cvops_dlt_pipeline.id}
-#        - task_key: "${bundle.environment}_medium_notebook_report"
-#          depends_on:
-#            - task_key: dlt_medium_pipeline
-#          notebook_task:
-#            base_parameters:
-#              dbname: "medium_post_report_${bundle.environment}"
-#            notebook_path: ./train/train_model.py
-#          new_cluster:
-#            spark_version: 13.1.x-scala2.12
-#            num_workers: 1
-#            node_type_id: i3.xlarge
+        - task_key: "${bundle.environment}_ingestion"
+          job_cluster_key: light-cpu-cluster
+          notebook_task:
+            base_parameters:
+              catalog: "techsummit_cvops_${bundle.environment}"
+              schema: "pcb"
+            notebook_path: ./etl/ingestion.py
+        - task_key: "${bundle.environment}_preprocessing"
+          depends_on:
+            - task_key: "${bundle.environment}_ingestion"
+          job_cluster_key: light-cpu-cluster
+          notebook_task:
+            base_parameters:
+              catalog: "techsummit_cvops_${bundle.environment}"
+              schema: "pcb"
+            notebook_path: ./etl/preprocessing.py
+        - task_key: "${bundle.environment}_train_model"
+          depends_on:
+            - task_key: "${bundle.environment}_preprocessing"
+          job_cluster_key: light-gpu-cluster
+          notebook_task:
+            base_parameters:
+              catalog: "techsummit_cvops_${bundle.environment}"
+              schema: "pcb"
+            notebook_path: ./train/train_model.py
+
 
 environments:
   development:
     default: true
-    resources:
-      pipelines:
-        cvops_dlt_pipeline:
-          development: true
 
   preproduction: # This environment is when deploying test runs from a pull request on GitHub.
     workspace:
