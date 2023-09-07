@@ -13,7 +13,7 @@ resources:
       job_clusters:
         - job_cluster_key: light-cpu-cluster
           new_cluster:
-            spark_version: 13.3.x-cpu-scala2.12
+            spark_version: 13.3.x-scala2.12
             node_type_id: Standard_DS3_v2
             num_workers: 2
         - job_cluster_key: light-gpu-cluster
