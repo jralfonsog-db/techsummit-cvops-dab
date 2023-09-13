@@ -1,0 +1,2 @@
+pytorch-lightning==1.9.2
+git+https://github.com/delta-incubator/deltatorch
