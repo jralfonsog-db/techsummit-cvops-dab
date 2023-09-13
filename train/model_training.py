@@ -1,5 +1,6 @@
 import pytorch_lightning as pl
 from torchvision import models
+import torchvision.transforms as tf
 from torchmetrics import Accuracy
 import torch.nn.functional as F
 import torchmetrics.functional as FM
@@ -80,3 +81,44 @@ class CVModel(pl.LightningModule):
         optimizer = torch.optim.SGD(params, lr=self.learning_rate, momentum=self.momentum)
         
         return optimizer
+      
+
+# Deltatorch makes it easy to load Delta Dataframe to torch and efficiently distribute it among multiple nodes.
+# This requires deltatorch being installed.
+# Note: For small dataset, a LightningDataModule exemple directly using hugging face transformers is also available in the _resources/00-init notebook.
+
+class DeltaDataModule(pl.LightningDataModule):
+    # Creating a Data loading module with Delta Torch loader
+    def __init__(self, train_path, test_path):
+        self.train_path = train_path
+        self.test_path = test_path
+        super().__init__()
+
+        self.transform = tf.Compose([
+            tf.Lambda(lambda x: x.convert("RGB")),
+            tf.Resize(256),
+            tf.CenterCrop(224),
+            tf.ToTensor(),
+            tf.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+
+    def dataloader(self, path: str, batch_size=32):
+        return create_pytorch_dataloader(
+            path,
+            id_field="id",
+            fields=[
+                FieldSpec("content", load_image_using_pil=True, transform=self.transform),
+                FieldSpec("label"),
+            ],
+            shuffle=True,
+            batch_size=batch_size,
+        )
+
+    def train_dataloader(self):
+        return self.dataloader(self.train_path, batch_size=64)
+
+    def val_dataloader(self):
+        return self.dataloader(self.test_path, batch_size=64)
+
+    def test_dataloader(self):
+        return self.dataloader(self.test_path, batch_size=64)

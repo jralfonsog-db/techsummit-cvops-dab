@@ -1,8 +1,7 @@
+from databricks.sdk.runtime import *
+
+
 # Below are initialization related functions
-def get_cloud_name():
-    return spark.conf.get("spark.databricks.clusterUsageTags.cloudProvider").lower()
-
-
 def get_current_url():
     return dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().get()
 
@@ -19,9 +18,6 @@ def get_username() -> str:  # Get the user's username
         .split("@")[0]
         .replace(".", "_")
     )
-
-
-cleaned_username = get_username()
 
 
 def get_pat():
