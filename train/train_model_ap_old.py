@@ -68,7 +68,7 @@ test_length = spark.read.format("delta").load(test_path).count()
 
 # COMMAND ----------
 
-from trainer import trainer
+from train import trainer
 from data_loader import DeltaDataModule
 from model_training import CVModel
 
@@ -79,25 +79,50 @@ trainer.trainer(dm=dm, model=model, num_gpus=1, db_host = db_host, db_token=db_t
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Example with script and distribution 
-# MAGIC
-# MAGIC ```
-# MAGIC from pyspark.ml.torch.distributor import TorchDistributor
-# MAGIC from train import trainer
-# MAGIC from data_loader import DeltaDataModule
-# MAGIC from model_training import CVModel
-# MAGIC
-# MAGIC ## be sure you are on dbr 13+
-# MAGIC path_training = "./trainer.py"
-# MAGIC args = ["--num_gpus=1"] #"--learning_rate=0.001", "--batch_size=16"
-# MAGIC # on lover than 13+ this will require you to install this manually 
-# MAGIC distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
-# MAGIC # Distributed can work only with a script if your code is not within the same notebook 
-# MAGIC # use this command 
-# MAGIC distributed.run(path_training , *args)
-# MAGIC
-# MAGIC ```
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+# MAGIC %md ## Training 
+
+# COMMAND ----------
+
+from pyspark.ml.torch.distributor import TorchDistributor
+from train import trainer
+from data_loader import DeltaDataModule
+from model_training import CVModel
+
+dm = DeltaDataModule(train_path, test_path)
+model = CVModel(dm.num_classes)
+
+# be sure you are on dbr 13+
+#path_training = "./trainer.py"
+#args = ["--num_gpus=1"] #"--learning_rate=0.001", "--batch_size=16"
+# on lover than 13+ this will require you to install this manually 
+#trainer.trainer(dm=dm, model=model, num_gpus=1, db_host = db_host, db_token=db_token, ckpt_path=ckpt_path)
+distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
+distributed.run(trainer.trainer, dm, model, 1, db_host, db_token, ckpt_path)
+
+# COMMAND ----------
+
+# from pyspark.ml.torch.distributor import TorchDistributor
+# from data_loader import DeltaDataModule
+# from model_training import CVModel
+
+# # be sure you are on dbr 13+
+# path_training = "./trainer.py"
+# args = ["--num_gpus=1"] #"--learning_rate=0.001", "--batch_size=16"
+# # on lover than 13+ this will require you to install this manually 
+# distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
+# distributed.run(path_training , *args)
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 
