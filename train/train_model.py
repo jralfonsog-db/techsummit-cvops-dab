@@ -1,5 +1,9 @@
 # Databricks notebook source
-# MAGIC %pip install pytorch-lightning git+https://github.com/delta-incubator/deltatorch.git
+# MAGIC %pip install --upgrade --force-reinstall pytorch-lightning==1.9.2 git+https://github.com/delta-incubator/deltatorch.git
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -53,6 +57,14 @@ NUM_WORKERS = 8
 
 # COMMAND ----------
 
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
 spark.sql(f"USE CATALOG {catalog}")
 spark.sql(f"USE SCHEMA {schema}")
 
@@ -68,57 +80,8 @@ spark.sql(f"USE SCHEMA {schema}")
 
 # COMMAND ----------
 
-# Below are initialization related functions
-def get_cloud_name():
-    return spark.conf.get("spark.databricks.clusterUsageTags.cloudProvider").lower()
-
-
-def get_current_url():
-    return dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().get()
-
-
-def get_username() -> str:  # Get the user's username
-    return (
-        dbutils()
-        .notebook.entry_point.getDbutils()
-        .notebook()
-        .getContext()
-        .tags()
-        .apply("user")
-        .lower()
-        .split("@")[0]
-        .replace(".", "_")
-    )
-
-
+from utils import *
 cleaned_username = get_username()
-
-
-def get_pat():
-    return (
-        dbutils.notebook.entry_point.getDbutils()
-        .notebook()
-        .getContext()
-        .apiToken()
-        .get()
-    )
-
-
-def get_request_headers() -> str:
-    return {
-        "Authorization": f"""Bearer {dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().get()}"""
-    }
-
-
-def get_instance() -> str:
-    return (
-        dbutils()
-        .notebook.entry_point.getDbutils()
-        .notebook()
-        .getContext()
-        .tags()
-        .apply("browserHostName")
-    )
 
 # COMMAND ----------
 

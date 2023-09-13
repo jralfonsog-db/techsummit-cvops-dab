@@ -1,0 +1,4 @@
+family: mobilenet
+learning_rate: 0.0002
+momentum: 0.9
+num_classes: 2
