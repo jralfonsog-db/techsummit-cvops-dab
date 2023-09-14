@@ -165,11 +165,13 @@ dbutils.widgets.text("environment", "environment")
 dbutils.widgets.text("catalog", "catalog")
 dbutils.widgets.text("schema", "schema")
 dbutils.widgets.text("model_name", "model_name")
+dbutils.widgets.text("experiment_name", "experiment_name")
 
 environment = dbutils.widgets.get("environment")
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
 model_name = dbutils.widgets.get("model_name")
+experiment_name = f"/Shared/{dbutils.widgets.get('experiment_name')}"
 
 # COMMAND ----------
 
@@ -195,6 +197,10 @@ spark.sql(f"USE SCHEMA {schema}")
 
 # COMMAND ----------
 
+mlflow.set_experiment(experiment_name=experiment_name)
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Train function
 
@@ -202,20 +208,6 @@ spark.sql(f"USE SCHEMA {schema}")
 
 # MAGIC %md
 # MAGIC ### Input example
-
-# COMMAND ----------
-
-images = spark.table(training_dataset_augmented_table).take(25)
-input_example = pd.DataFrame(
-  [
-    base64.b64encode(images[0]["content"]).decode("ascii"),
-    base64.b64encode(images[1]["content"]).decode("ascii"),
-    base64.b64encode(images[2]["content"]).decode("ascii"),
-    base64.b64encode(images[3]["content"]).decode("ascii"),
-    base64.b64encode(images[4]["content"]).decode("ascii")
-  ],
-  columns=["data"]
-)
 
 # COMMAND ----------
 
@@ -293,22 +285,11 @@ def train_model(dm, num_gpus=1, single_node=True):
             reqs = mlflow.pytorch.get_default_pip_requirements() + [
                 "pytorch-lightning==" + pl.__version__
             ]
-            # pytorch_model = CVTorchModelWrapper(model.model)  # We use our previously defined class to wrap our model including the overriden predict method
-            model_wrapper = CVModelWrapper(model.model)
 
-            # model signature
-            img = input_example["data"]
-            predict_df = model_wrapper.predict("", input_example)
-            predict_example = predict_df[["score", "label"]]
-            signature = infer_signature(img, predict_example)
-
-            mlflow.pyfunc.log_model(
+            mlflow.pytorch.log_model(
                 artifact_path="model",
-                python_model=model_wrapper,
-                input_example=input_example,
-                signature=signature,
-                registered_model_name=model_name,
-                pip_requirements=reqs,
+                pytorch_model=model.model,
+                pip_requirements=reqs
             )
 
             # Save the test/validate transform as we'll have to apply the same transformation in our pipeline.
@@ -344,18 +325,3 @@ def train_model(dm, num_gpus=1, single_node=True):
 delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
 
 run_id = train_model(delta_dataloader, 1, True)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # Register model in UC
-
-# COMMAND ----------
-
-mlflow.set_registry_uri("databricks-uc")
-mlflow.register_model(f"runs:/{run_id}/model", f"{catalog}.{schema}.{model_name}")
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # Model Serving
