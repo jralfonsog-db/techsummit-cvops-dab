@@ -17,6 +17,8 @@ import io
 from io import BytesIO
 import os
 import torch
+import torchvision
+import torchmetrics
 from torchvision import models
 from torchmetrics import Accuracy
 from torch.nn import functional as nnf
@@ -275,6 +277,20 @@ input_example = pd.DataFrame(
 
 # COMMAND ----------
 
+reqs = mlflow.pytorch.get_default_conda_env()
+reqs["dependencies"][2]["pip"] = reqs["dependencies"][2]["pip"] + [
+    "pytorch-lightning==" + pl.__version__,
+    "git+https://github.com/delta-incubator/deltatorch.git",
+    "torchvision==" + torchvision.__version__,
+    "torchmetrics==" + torchmetrics.__version__,
+]
+
+from pprint import pprint
+
+pprint(reqs)
+
+# COMMAND ----------
+
 def train_model(dm, num_gpus=1, single_node=True):
     # We put them into these environment variables as this is where mlflow will look by default
     os.environ["DATABRICKS_HOST"] = get_current_url()
@@ -346,11 +362,12 @@ def train_model(dm, num_gpus=1, single_node=True):
         # index of the current process across all nodes and devices. Only log on rank 0
         if trainer.global_rank == 0:
             print("Logging our model")
-            reqs = mlflow.pytorch.get_default_pip_requirements() + [
+            reqs = mlflow.pytorch.get_default_conda_env()
+            reqs["dependencies"][2]["pip"] = reqs["dependencies"][2]["pip"] + [
                 "pytorch-lightning==" + pl.__version__,
                 "git+https://github.com/delta-incubator/deltatorch.git",
-                "torchvision==0.14.1+cu117",
-                "torchmetrics==1.1.2"
+                "torchvision==" + torchvision.__version__.split("+")[0],
+                "torchmetrics==" + torchmetrics.__version__,
             ]
 
             # model wrapper with overridden predict method that includes transformations, infer signatures
@@ -364,7 +381,7 @@ def train_model(dm, num_gpus=1, single_node=True):
                 python_model=python_model,
                 input_example=input_example,
                 signature=signature,
-                pip_requirements=reqs,
+                conda_env=reqs,
                 registered_model_name=model_name
             )
 
@@ -391,12 +408,12 @@ def train_model(dm, num_gpus=1, single_node=True):
 
 # COMMAND ----------
 
-# delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
-# run_id = train_model(delta_dataloader, 1, True)
+delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
+run_id = train_model(delta_dataloader, 1, True)
 
 # COMMAND ----------
 
-from pyspark.ml.torch.distributor import TorchDistributor
-delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
-distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
-distributed.run(train_model, delta_dataloader, 1, False)
+# from pyspark.ml.torch.distributor import TorchDistributor
+# delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
+# distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
+# distributed.run(train_model, delta_dataloader, 1, False)
