@@ -3,13 +3,11 @@ import mlflow
 
 # COMMAND ----------
 
-dbutils.widgets.text("environment", "environment")
 dbutils.widgets.text("catalog", "catalog")
 dbutils.widgets.text("schema", "schema")
 dbutils.widgets.text("model_name", "model_name")
 dbutils.widgets.text("experiment_name", "experiment_name")
 
-environment = dbutils.widgets.get("environment")
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
 model_name = dbutils.widgets.get("model_name")

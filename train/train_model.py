@@ -38,6 +38,18 @@ from model_serving import CVModelWrapper
 
 # COMMAND ----------
 
+dbutils.widgets.text("catalog", "catalog")
+dbutils.widgets.text("schema", "schema")
+dbutils.widgets.text("model_name", "model_name")
+dbutils.widgets.text("experiment_name", "experiment_name")
+
+catalog = dbutils.widgets.get("catalog")
+schema = dbutils.widgets.get("schema")
+model_name = dbutils.widgets.get("model_name")
+experiment_name = f"/Shared/{dbutils.widgets.get('experiment_name')}"
+
+# COMMAND ----------
+
 # This belongs to model_training.py
 
 import pytorch_lightning as pl
@@ -200,20 +212,6 @@ class CVModelWrapper(mlflow.pyfunc.PythonModel):
             labelName=labels)
           )
 
-
-# COMMAND ----------
-
-dbutils.widgets.text("environment", "environment")
-dbutils.widgets.text("catalog", "catalog")
-dbutils.widgets.text("schema", "schema")
-dbutils.widgets.text("model_name", "model_name")
-dbutils.widgets.text("experiment_name", "experiment_name")
-
-environment = dbutils.widgets.get("environment")
-catalog = dbutils.widgets.get("catalog")
-schema = dbutils.widgets.get("schema")
-model_name = dbutils.widgets.get("model_name")
-experiment_name = f"/Shared/{dbutils.widgets.get('experiment_name')}"
 
 # COMMAND ----------
 

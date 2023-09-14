@@ -53,6 +53,10 @@ def score_model(dataset):
 
 # COMMAND ----------
 
+display(spark.table(training_dataset_augmented_table))
+
+# COMMAND ----------
+
 images = spark.table(training_dataset_augmented_table).take(5)
 input_example = pd.DataFrame(
   [
