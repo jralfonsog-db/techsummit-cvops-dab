@@ -3,6 +3,15 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC # Imports, parameters and settings
+
+# COMMAND ----------
+
+!pip list
+
+# COMMAND ----------
+
 from PIL import Image
 import pytorch_lightning as pl
 from deltatorch import create_pytorch_dataloader
@@ -158,6 +167,41 @@ class DeltaDataModule(pl.LightningDataModule):
     def test_dataloader(self):
         return self.dataloader(self.test_path, batch_size=64)
 
+class CVModelWrapper(mlflow.pyfunc.PythonModel):
+    def __init__(self, model):
+        # instantiate model in evaluation mode
+        model.to(torch.device("cpu"))
+        self.model = model.eval()
+
+    def feature_extractor(self, image):
+        transform = tf.Compose([
+            tf.Resize(256),
+            tf.CenterCrop(224),
+            tf.ToTensor(),
+            tf.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
+        #return transform(Image.open(io.BytesIO(data)))
+        return transform(Image.open(BytesIO(base64.b64decode(image))))
+
+    def predict(self, context, images):
+        with torch.set_grad_enabled(False):
+          id2label = {0: "normal", 1: "anomaly"}
+          # add here check if this is a DataFrame 
+          # if this is an image remove iterrows 
+          pil_images = torch.stack([self.feature_extractor(row[0]) for _, row in images.iterrows()])
+          #pil_images = images.map(lambda x: self.feature_extractor(x))
+          pil_images = pil_images.to(torch.device("cpu"))
+          outputs = self.model(pil_images)
+          preds = torch.max(outputs, 1)[1]
+          probs = torch.nn.functional.softmax(outputs, dim=-1)[:, 1]
+          labels = [id2label[pred] for pred in preds.tolist()]
+
+          return pd.DataFrame( data=dict(
+            score=probs,
+            label=preds,
+            labelName=labels)
+          )
+
 
 # COMMAND ----------
 
@@ -208,6 +252,25 @@ mlflow.set_experiment(experiment_name=experiment_name)
 
 # MAGIC %md
 # MAGIC ### Input example
+
+# COMMAND ----------
+
+images = spark.table(training_dataset_augmented_table).take(5)
+input_example = pd.DataFrame(
+  [
+    base64.b64encode(images[0]["content"]).decode("ascii"),
+    base64.b64encode(images[1]["content"]).decode("ascii"),
+    base64.b64encode(images[2]["content"]).decode("ascii"),
+    base64.b64encode(images[3]["content"]).decode("ascii"),
+    base64.b64encode(images[4]["content"]).decode("ascii")
+  ],
+  columns=["data"]
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Train function definition
 
 # COMMAND ----------
 
@@ -283,13 +346,25 @@ def train_model(dm, num_gpus=1, single_node=True):
         if trainer.global_rank == 0:
             print("Logging our model")
             reqs = mlflow.pytorch.get_default_pip_requirements() + [
-                "pytorch-lightning==" + pl.__version__
+                "pytorch-lightning==" + pl.__version__,
+                "git+https://github.com/delta-incubator/deltatorch.git",
+                "torchvision==0.14.1+cu117",
+                "torchmetrics==1.1.2"
             ]
 
-            mlflow.pytorch.log_model(
+            # model wrapper with overridden predict method that includes transformations, infer signatures
+            python_model = CVModelWrapper(model.model)
+            img = input_example['data']
+            predict_example = python_model.predict("", input_example)[['score','label']]
+            signature = infer_signature(img, predict_example)
+
+            mlflow.pyfunc.log_model(
                 artifact_path="model",
-                pytorch_model=model.model,
-                pip_requirements=reqs
+                python_model=python_model,
+                input_example=input_example,
+                signature=signature,
+                pip_requirements=reqs,
+                registered_model_name=model_name
             )
 
             # Save the test/validate transform as we'll have to apply the same transformation in our pipeline.
