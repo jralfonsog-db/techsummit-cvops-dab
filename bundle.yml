@@ -7,79 +7,63 @@ workspace:
 
 resources:
   jobs:
-    # A three-task Databricks Workflow (all notebooks) - ingestion + preprocessing + training
+    # A four-task Databricks Workflow (all notebooks) - ingestion + preprocessing + training + serve_model
     techsummit_cvops_training:
       name: "[${bundle.environment}] Tech Summit CVOps - Training pipeline"
       job_clusters:
-        - job_cluster_key: light-cpu-cluster
+        - job_cluster_key: cpu-cluster
           new_cluster:
             spark_version: 13.3.x-scala2.12
             node_type_id: Standard_DS3_v2
             num_workers: 2
-        - job_cluster_key: light-gpu-cluster
+        - job_cluster_key: gpu-cluster
           new_cluster:
             spark_version: 13.3.x-gpu-ml-scala2.12
             node_type_id: Standard_NC6s_v3
-            spark_conf:
-              spark.master: local[*, 4]
-              spark.databricks.cluster.profile: singleNode
-              spark.databricks.dataLineage.enabled: 'true'
-              spark.databricks.delta.preview.enabled: 'true'
+            num_workers: 1
       tasks:
-        - task_key: "${bundle.environment}_ingestion"
-          job_cluster_key: light-cpu-cluster
+        - task_key: "ingestion"
+          job_cluster_key: cpu-cluster
           notebook_task:
             base_parameters:
               catalog: "techsummit_cvops_${bundle.environment}"
               schema: "pcb"
             notebook_path: ./etl/ingestion.py
-        - task_key: "${bundle.environment}_preprocessing"
+        - task_key: "preprocessing"
           depends_on:
-            - task_key: "${bundle.environment}_ingestion"
-          job_cluster_key: light-cpu-cluster
+            - task_key: "ingestion"
+          job_cluster_key: cpu-cluster
           notebook_task:
             base_parameters:
               catalog: "techsummit_cvops_${bundle.environment}"
               schema: "pcb"
             notebook_path: ./etl/preprocessing.py
-        - task_key: "${bundle.environment}_train_model"
+        - task_key: "train_model"
           depends_on:
-            - task_key: "${bundle.environment}_preprocessing"
-          job_cluster_key: light-gpu-cluster
+            - task_key: "preprocessing"
+          job_cluster_key: gpu-cluster
           notebook_task:
             base_parameters:
               catalog: "techsummit_cvops_${bundle.environment}"
               schema: "pcb"
+              experiment_name: "techsummit_cvops_experiment"
+              model_name: "techsummit_cvops_model"
             notebook_path: ./train/train_model.py
-
+        - task_key: "serve_model"
+          depends_on:
+            - task_key: "train_model"
+          job_cluster_key: gpu-cluster
+          notebook_task:
+            base_parameters:
+              catalog: "techsummit_cvops_${bundle.environment}"
+              schema: "pcb"
+              experiment_name: "techsummit_cvops_experiment"
+              model_name: "techsummit_cvops_model"
+            notebook_path: ./deploy/serve_model.py
 
 environments:
   development:
     default: true
 
-  preproduction: # This environment is when deploying test runs from a pull request on GitHub.
-    workspace:
-      host: https://adb-984752964297111.11.azuredatabricks.net/
-    resources:
-      pipelines:
-        cvops_dlt_pipeline:
-          development: true
-          permissions:
-            - level: CAN_VIEW
-              group_name: users      
-
   production:
-    workspace:
-      host: https://adb-984752964297111.11.azuredatabricks.net/
-    resources:
-      pipelines:
-        cvops_dlt_pipeline:
-          permissions:
-          - level: CAN_VIEW
-            group_name: users
-          development: false
-          # photon: true
-          # clusters:
-          #   - autoscale:
-          #       min_workers: 2
-          #       max_workers: 8
+    host: https://adb-984752964297111.11.azuredatabricks.net/
