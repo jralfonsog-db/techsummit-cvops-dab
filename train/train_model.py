@@ -17,6 +17,7 @@ from torchmetrics import Accuracy
 from torch.nn import functional as nnf
 from pytorch_lightning.loggers import MLFlowLogger
 import mlflow
+from mlflow.models.signature import infer_signature
 from mlflow.utils.file_utils import TempDir
 import cloudpickle
 import base64
@@ -25,7 +26,8 @@ import pandas as pd
 # COMMAND ----------
 
 from utils import get_current_url, get_username, get_pat
-from model_training import DeltaDataModule, CVModel, CVModelWrapper
+from model_training import DeltaDataModule, CVModel
+from model_serving import CVModelWrapper
 
 # COMMAND ----------
 
@@ -198,10 +200,29 @@ spark.sql(f"USE SCHEMA {schema}")
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ### Input example
+
+# COMMAND ----------
+
+images = spark.table(training_dataset_augmented_table).take(25)
+input_example = pd.DataFrame(
+  [
+    base64.b64encode(images[0]["content"]).decode("ascii"),
+    base64.b64encode(images[1]["content"]).decode("ascii"),
+    base64.b64encode(images[2]["content"]).decode("ascii"),
+    base64.b64encode(images[3]["content"]).decode("ascii"),
+    base64.b64encode(images[4]["content"]).decode("ascii")
+  ],
+  columns=["data"]
+)
+
+# COMMAND ----------
+
 def train_model(dm, num_gpus=1, single_node=True):
     # We put them into these environment variables as this is where mlflow will look by default
-    os.environ['DATABRICKS_HOST'] = get_current_url()
-    os.environ['DATABRICKS_TOKEN'] = get_pat()
+    os.environ["DATABRICKS_HOST"] = get_current_url()
+    os.environ["DATABRICKS_TOKEN"] = get_pat()
     torch.set_float32_matmul_precision("medium")
     if single_node or num_gpus == 1:
         num_devices = num_gpus
@@ -210,14 +231,14 @@ def train_model(dm, num_gpus=1, single_node=True):
     else:
         num_devices = 1
         num_nodes = num_gpus
-        strategy = 'ddp_notebook'  # check this is ddp or ddp_notebook
+        strategy = "ddp_notebook"  # check this is ddp or ddp_notebook
 
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         save_top_k=2,
         mode="min",
         monitor="val_loss",  # this has been saved under the Model Trainer - inside the validation_step function
         dirpath=ckpt_path,
-        filename="sample-cvops-{epoch:02d}-{val_loss:.2f}"
+        filename="sample-cvops-{epoch:02d}-{val_loss:.2f}",
     )
     early_stop_callback = pl.callbacks.EarlyStopping(
         monitor="train_loss",
@@ -228,12 +249,11 @@ def train_model(dm, num_gpus=1, single_node=True):
         verbose=True,
         mode="min",
         check_on_train_epoch_end=True,
-        log_rank_zero_only=True
+        log_rank_zero_only=True,
     )
 
     tqdm_callback = pl.callbacks.TQDMProgressBar(
-        refresh_rate=STEPS_PER_EPOCH,
-        process_position=0
+        refresh_rate=STEPS_PER_EPOCH, process_position=0
     )
     # make your list of choices that you want to add to your trainer
     callbacks = [early_stop_callback, checkpoint_callback, tqdm_callback]
@@ -252,24 +272,45 @@ def train_model(dm, num_gpus=1, single_node=True):
             callbacks=[early_stop_callback, checkpoint_callback, tqdm_callback],
             strategy=strategy,
             num_nodes=num_nodes,
-            logger=mlf_logger)
+            logger=mlf_logger,
+        )
 
         print(
-            f"Global Rank: {trainer.global_rank} - Local Rank: {trainer.local_rank} - World Size: {trainer.world_size}")
+            f"Global Rank: {trainer.global_rank} - Local Rank: {trainer.local_rank} - World Size: {trainer.world_size}"
+        )
         # device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
         model = CVModel(2)
         # model.to(device)
 
         trainer.fit(model, dm)
         print("Training is done ")
-        val_metrics = trainer.validate(model, dataloaders=dm.val_dataloader(), verbose=False)
+        val_metrics = trainer.validate(
+            model, dataloaders=dm.val_dataloader(), verbose=False
+        )
         # index of the current process across all nodes and devices. Only log on rank 0
         if trainer.global_rank == 0:
             print("Logging our model")
-            reqs = mlflow.pytorch.get_default_pip_requirements() + ["pytorch-lightning==" + pl.__version__]
+            reqs = mlflow.pytorch.get_default_pip_requirements() + [
+                "pytorch-lightning==" + pl.__version__
+            ]
             # pytorch_model = CVTorchModelWrapper(model.model)  # We use our previously defined class to wrap our model including the overriden predict method
-            pytorch_model = model.model
-            mlflow.pytorch.log_model(artifact_path="model", pytorch_model=pytorch_model, pip_requirements=reqs)
+            model_wrapper = CVModelWrapper(model.model)
+
+            # model signature
+            img = input_example["data"]
+            predict_df = model_wrapper.predict("", input_example)
+            predict_example = predict_df[["score", "label"]]
+            signature = infer_signature(img, predict_example)
+
+            mlflow.pyfunc.log_model(
+                artifact_path="model",
+                python_model=model_wrapper,
+                input_example=input_example,
+                signature=signature,
+                registered_model_name=model_name,
+                pip_requirements=reqs,
+            )
+
             # Save the test/validate transform as we'll have to apply the same transformation in our pipeline.
             # We could alternatively build a model wrapper to encapsulate these transformations as part as of our model (that's what we did with the huggingface implementation).
             with TempDir(remove_on_exit=True) as local_artifacts_dir:
@@ -284,7 +325,6 @@ def train_model(dm, num_gpus=1, single_node=True):
 
     return mlf_logger.run_id
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -294,10 +334,10 @@ def train_model(dm, num_gpus=1, single_node=True):
 
 # COMMAND ----------
 
-from pyspark.ml.torch.distributor import TorchDistributor
-delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
-distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
-distributed.run(train_model, delta_dataloader, 1, False)
+# from pyspark.ml.torch.distributor import TorchDistributor
+# delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
+# distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
+# distributed.run(train_model, delta_dataloader, 1, False)
 
 # COMMAND ----------
 
@@ -319,43 +359,3 @@ mlflow.register_model(f"runs:/{run_id}/model", f"{catalog}.{schema}.{model_name}
 
 # MAGIC %md
 # MAGIC # Model Serving
-
-# COMMAND ----------
-
-from io import BytesIO
-import base64
-import pandas as pd
-
-
-# Model wrapper
-class RealtimeCVTorchModelWrapper(mlflow.pyfunc.PythonModel):
-    def __init__(self, model):
-        self.model = model
-        # instantiate model in evaluation mode
-        self.model.eval()
-
-    def predict(self, context, images):
-        with torch.set_grad_enabled(False):
-            # Convert the base64 to PIL images
-            images = images['data'].apply(lambda b: base64.b64decode(b))
-            return predict_byte_serie(images, self.model)
-
-
-# Load it as CPU as our endpoint will be cpu for now
-model_cpu = mlflow.pytorch.load_model(f"runs:/{run_id}/model").to(torch.device("cpu"))
-rt_model = RealtimeCVTorchModelWrapper(model_cpu)
-
-
-def to_base64(b):
-    return base64.b64encode(b).decode("ascii")
-
-
-df = spark.table(training_dataset_augmented_table)
-
-# Let's try locally before deploying our endpoint to make sure it works as expected:
-pdf = df.limit(10).toPandas()
-
-# Transform our input as a pandas dataframe containing base64 as this is what our serverless model endpoint will receive.
-input_example = pd.DataFrame(pdf["content"].apply(to_base64).to_list(), columns=["data"])
-predictions = rt_model.predict(None, input_example)
-display(predictions)
