@@ -41,7 +41,7 @@ def create_tf_serving_json(data):
   return {'inputs': {name: data[name].tolist() for name in data.keys()} if isinstance(data, dict) else data.tolist()}
 
 def score_model(dataset):
-  url = f'{f}/techsummit_cvops_development/invocations'
+  url = f'{host}/serving-endpoints/techsummit_cvops_development/invocations'
   headers = {'Authorization': f'Bearer {pat}', 'Content-Type': 'application/json'}
   ds_dict = {'dataframe_split': dataset.to_dict(orient='split')} if isinstance(dataset, pd.DataFrame) else create_tf_serving_json(dataset)
   data_json = json.dumps(ds_dict, allow_nan=True)

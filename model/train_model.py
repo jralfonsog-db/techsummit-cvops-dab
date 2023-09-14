@@ -8,10 +8,6 @@
 
 # COMMAND ----------
 
-!pip list
-
-# COMMAND ----------
-
 from PIL import Image
 import pytorch_lightning as pl
 from deltatorch import create_pytorch_dataloader
@@ -246,12 +242,13 @@ mlflow.set_experiment(experiment_name=experiment_name)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Train function
+# MAGIC # Training
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ### Input example
+# MAGIC ## Input example
+# MAGIC This will be used later for infering the model signature
 
 # COMMAND ----------
 
@@ -271,6 +268,10 @@ input_example = pd.DataFrame(
 
 # MAGIC %md
 # MAGIC ## Train function definition
+# MAGIC This function is flexible enough to be used for the following scenarios:
+# MAGIC - Single-node, single-GPU training
+# MAGIC - Single-node, multi-GPU training
+# MAGIC - Multi-node, multi-GPU training, with the help of Torch Distributor (see below)
 
 # COMMAND ----------
 
@@ -384,19 +385,18 @@ def train_model(dm, num_gpus=1, single_node=True):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC # Training
+# MAGIC ## Training process
 # MAGIC
-# MAGIC We'll introduce a environment check before training. If we are in `development`, we will use a single GPU. If we are in `preproduction`, we'll assume we are going to train a bigger model and so we'll use 2 GPU instead
+# MAGIC We use TorchDistributor to allow multi-node, multi-GPU training with ease.
 
 # COMMAND ----------
 
-# from pyspark.ml.torch.distributor import TorchDistributor
 # delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
-# distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
-# distributed.run(train_model, delta_dataloader, 1, False)
+# run_id = train_model(delta_dataloader, 1, True)
 
 # COMMAND ----------
 
+from pyspark.ml.torch.distributor import TorchDistributor
 delta_dataloader = DeltaDataModule(train_deltatorch_path, test_deltatorch_path)
-
-run_id = train_model(delta_dataloader, 1, True)
+distributed = TorchDistributor(num_processes=2, local_mode=False, use_gpu=True)
+distributed.run(train_model, delta_dataloader, 1, False)
